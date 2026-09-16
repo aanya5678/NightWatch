@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getSnapshot, resetSimulation, simulateScenario } from "./store";
 import { handleNightWatchMcpRequest } from "./mcpServer";
 import { verifyNightWatchMcpEndpoint } from "./mcpClientSmoke";
+import { NIGHTWATCH_MCP_PROTOCOL_VERSION } from "./mcpServer";
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -38,6 +39,7 @@ describe("NightWatch MCP client smoke test", () => {
       "assess_activity",
       "get_alert_explanation",
     ]);
+    expect(result.protocolVersion).toBe(NIGHTWATCH_MCP_PROTOCOL_VERSION);
     expect(result.results.recentEvents.totalAvailable).toBe(expected.events.length);
     expect((result.results.recentEvents.events as Array<{ id: string }>)[0]?.id).toBe(expected.events[0]?.id);
     expect(result.results.homeContext.householdState).toBe(expected.householdState);

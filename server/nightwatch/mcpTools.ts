@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { getSnapshot, askWhy } from "./store";
 import { RingEvent } from "./types";
 
@@ -6,7 +7,7 @@ export function getRecentEvents(limit = 10) {
   return {
     events: snapshot.events.slice(0, Math.max(1, Math.min(limit, 50))),
     totalAvailable: snapshot.events.length,
-    source: "NightWatch SQLite event store",
+    source: "NightWatch SQLite event store" as const,
   };
 }
 
@@ -29,7 +30,7 @@ export function assessRecentActivity() {
     assessment: snapshot.assessment,
     decision: snapshot.decision,
     eventIds: snapshot.events.map(event => event.id),
-    deterministicAuthority: "NightWatch contextEngine.createEscalationDecision",
+    deterministicAuthority: "NightWatch contextEngine.createEscalationDecision" as const,
   };
 }
 
@@ -37,9 +38,11 @@ export function getAlertExplanation(question = "Why did you wake me?") {
   return askWhy(question);
 }
 
-export function serializeToolResult(value: unknown) {
+export function serializeToolResult(value: unknown, schema: z.ZodTypeAny) {
+  const structuredContent = schema.parse(value) as Record<string, unknown>;
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(structuredContent, null, 2) }],
+    structuredContent,
   };
 }
 
