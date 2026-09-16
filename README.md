@@ -37,6 +37,16 @@ The official `@modelcontextprotocol/sdk` provides the transport and protocol han
 
 This is an **experimental local MCP boundary**, tested in-process and with an HTTP initialization smoke test. It is not presented as Alexa+ compatible, as a physical Alexa integration, or as compliance with a particular MCP specification version. A future integration milestone must verify the target Amazon requirements, authentication, session behavior, protocol version, and deployment constraints before making those claims.
 
+## Milestone 4: MCP client verification
+
+NightWatch now includes a real SDK client smoke path using `Client` and `StreamableHTTPClientTransport`. The automated test mounts the existing `/mcp` handler on an ephemeral local HTTP server, performs MCP initialization, discovers the four tools, and calls each tool over HTTP. It compares returned event IDs, household state, assessment score, escalation status, and explanation evidence with the existing NightWatch store output. The client contains no context-engine or escalation logic.
+
+With the development server running, the same check can be run manually:
+
+```bash
+pnpm mcp:smoke http://127.0.0.1:3000/mcp
+```
+
 ## Run locally
 
 Requirements: Node.js 22+ and pnpm.
@@ -82,6 +92,8 @@ server/nightwatch/sqliteRepository.test.ts SQLite persistence regression tests
 server/nightwatch/mcpTools.ts            Typed adapters over existing domain capabilities
 server/nightwatch/mcpServer.ts           Official SDK server and Streamable HTTP endpoint
 server/nightwatch/mcpServer.test.ts      In-process MCP tool protocol tests
+server/nightwatch/mcpClientSmoke.ts     Official SDK client smoke verifier
+server/nightwatch/mcpClientSmoke.test.ts Real HTTP client-to-server verification
 ```
 
 ## Design notes
