@@ -25,11 +25,17 @@ The dashboard communicates with the backend router. It does not call the context
 | Ring | Simulator only; no live Ring credentials or undocumented API assumptions |
 | Alexa+ | Simulated bedroom device and alert button only |
 | AWS | Not connected |
-| MCP | Planned local server boundary; no MCP compliance claim is made yet |
+| MCP | Local experimental Streamable HTTP boundary at `POST /mcp`; no Alexa+ or version-specific MCP compliance claim |
 | Persistence | Local SQLite store at `data/nightwatch.sqlite` |
 | Transport | WebDev's type-safe tRPC procedure boundary; the domain layer is isolated so REST/FastAPI or another transport can be added without moving UI logic |
 
 The WebDev full-stack scaffold uses a Node/TypeScript server, so the dashboard uses that platform-native server boundary rather than introducing a second always-on Python process. The business logic is kept in small, readable modules under `server/nightwatch/`. Persistence uses Node 22's built-in `node:sqlite` API, with no native npm dependency. The SQLite repository stores the current normalized Ring event window, household state, scenario marker, and alert history. Before Amazon integrations, the next architectural decision is whether to port that isolated domain layer to a Python/FastAPI service or keep the platform server and expose a separate Python MCP service.
+
+## Milestone 3: MCP boundary
+
+The official `@modelcontextprotocol/sdk` provides the transport and protocol handling. NightWatch mounts a stateless `POST /mcp` Streamable HTTP endpoint and exposes four read-oriented tools: `get_recent_events`, `get_home_context`, `assess_activity`, and `get_alert_explanation`. The tool handlers call the existing `store.ts` functions, which reload SQLite state and invoke the deterministic context engine. The MCP layer does not contain scoring, escalation, persistence, or explanation business logic.
+
+This is an **experimental local MCP boundary**, tested in-process and with an HTTP initialization smoke test. It is not presented as Alexa+ compatible, as a physical Alexa integration, or as compliance with a particular MCP specification version. A future integration milestone must verify the target Amazon requirements, authentication, session behavior, protocol version, and deployment constraints before making those claims.
 
 ## Run locally
 
@@ -73,6 +79,9 @@ server/nightwatch/sqliteRepository.ts   SQLite persistence boundary
 server/nightwatch/router.ts            Backend procedures consumed by the dashboard
 server/nightwatch/contextEngine.test.ts Context-engine regression tests
 server/nightwatch/sqliteRepository.test.ts SQLite persistence regression tests
+server/nightwatch/mcpTools.ts            Typed adapters over existing domain capabilities
+server/nightwatch/mcpServer.ts           Official SDK server and Streamable HTTP endpoint
+server/nightwatch/mcpServer.test.ts      In-process MCP tool protocol tests
 ```
 
 ## Design notes

@@ -19,7 +19,7 @@ const architecture = {
   ring: "Simulator" as const,
   alexa: "Simulation only" as const,
   aws: "Not connected" as const,
-  mcp: "Planned locally" as const,
+  mcp: "Local boundary (experimental)" as const,
 };
 
 const repository = createNightWatchRepository();
