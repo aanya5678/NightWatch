@@ -5,6 +5,7 @@ import {
   DEFAULT_BASELINE,
   explainDecision,
 } from "./contextEngine";
+import { createNightWatchRepository } from "./sqliteRepository";
 import {
   AlertRecord,
   ExplanationResponse,
@@ -21,17 +22,7 @@ const architecture = {
   mcp: "Planned locally" as const,
 };
 
-const state: {
-  householdState: HouseholdState;
-  events: RingEvent[];
-  alerts: AlertRecord[];
-  lastScenario: ScenarioName | "ready";
-} = {
-  householdState: "sleeping",
-  events: [],
-  alerts: [],
-  lastScenario: "ready",
-};
+const repository = createNightWatchRepository();
 
 function scenarioBaseTime(scenario: ScenarioName) {
   const base = new Date();
@@ -89,18 +80,19 @@ function generateScenario(scenario: ScenarioName): RingEvent[] {
 }
 
 function buildSnapshot(): NightWatchSnapshot {
-  const assessment = assessActivity(state.events, state.householdState, DEFAULT_BASELINE);
-  const decision = createEscalationDecision(assessment, state.events);
+  const persisted = repository.readState();
+  const assessment = assessActivity(persisted.events, persisted.householdState, DEFAULT_BASELINE);
+  const decision = createEscalationDecision(assessment, persisted.events);
 
   return {
-    householdState: state.householdState,
-    events: [...state.events].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)),
+    householdState: persisted.householdState,
+    events: persisted.events,
     assessment,
     decision,
-    alerts: [...state.alerts],
+    alerts: persisted.alerts,
     baseline: DEFAULT_BASELINE,
     architecture,
-    lastScenario: state.lastScenario,
+    lastScenario: persisted.lastScenario,
   };
 }
 
@@ -109,44 +101,37 @@ export function getSnapshot() {
 }
 
 export function resetSimulation() {
-  state.events = [];
-  state.alerts = [];
-  state.lastScenario = "ready";
-  state.householdState = "sleeping";
+  repository.clearSimulation();
   return buildSnapshot();
 }
 
 export function setHouseholdState(householdState: HouseholdState) {
-  state.householdState = householdState;
-  state.events = state.events.map(event => ({ ...event, householdState }));
+  repository.updateHouseholdState(householdState);
   return buildSnapshot();
 }
 
 export function simulateScenario(scenario: ScenarioName) {
-  state.events = generateScenario(scenario);
-  state.householdState = scenario === "normal" || scenario === "repeated" ? "active" : "sleeping";
-  state.alerts = [];
-  state.lastScenario = scenario;
+  const events = generateScenario(scenario);
+  const householdState = scenario === "normal" || scenario === "repeated" ? "active" : "sleeping";
+  repository.replaceEvents(events, householdState, scenario);
 
   const snapshot = buildSnapshot();
   if (snapshot.decision.escalated && snapshot.decision.alertMessage) {
-    state.alerts = [{
+    const alert: AlertRecord = {
       id: `alert-${randomUUID().slice(0, 8)}`,
       createdAt: new Date().toISOString(),
       status: "pending",
       message: snapshot.decision.alertMessage,
       reason: snapshot.decision.reason,
-      relatedEventIds: state.events.map(event => event.id),
-    }];
+      relatedEventIds: events.map(event => event.id),
+    };
+    repository.addAlert(alert);
   }
   return buildSnapshot();
 }
 
 export function triggerAlexaAlert() {
-  const latest = state.alerts[state.alerts.length - 1];
-  if (latest) {
-    latest.status = "delivered";
-  }
+  repository.markLatestAlertDelivered();
   return buildSnapshot();
 }
 

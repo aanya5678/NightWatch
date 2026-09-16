@@ -26,10 +26,10 @@ The dashboard communicates with the backend router. It does not call the context
 | Alexa+ | Simulated bedroom device and alert button only |
 | AWS | Not connected |
 | MCP | Planned local server boundary; no MCP compliance claim is made yet |
-| Persistence | In-memory store for the first vertical slice; SQLite is the next backend milestone |
+| Persistence | Local SQLite store at `data/nightwatch.sqlite` |
 | Transport | WebDev's type-safe tRPC procedure boundary; the domain layer is isolated so REST/FastAPI or another transport can be added without moving UI logic |
 
-The WebDev full-stack scaffold uses a Node/TypeScript server, so the first working dashboard uses that platform-native server boundary rather than introducing a second always-on Python process. The business logic is kept in small, readable modules under `server/nightwatch/`. Before Amazon integrations, the next architectural decision is whether to port that isolated domain layer to a Python/FastAPI service or keep the platform server and expose a separate Python MCP service.
+The WebDev full-stack scaffold uses a Node/TypeScript server, so the dashboard uses that platform-native server boundary rather than introducing a second always-on Python process. The business logic is kept in small, readable modules under `server/nightwatch/`. Persistence uses Node 22's built-in `node:sqlite` API, with no native npm dependency. The SQLite repository stores the current normalized Ring event window, household state, scenario marker, and alert history. Before Amazon integrations, the next architectural decision is whether to port that isolated domain layer to a Python/FastAPI service or keep the platform server and expose a separate Python MCP service.
 
 ## Run locally
 
@@ -67,9 +67,12 @@ client/src/pages/Home.tsx             Dashboard UI and simulator controls
 client/src/index.css                  NightWatch visual system
 server/nightwatch/types.ts            Domain models and integration status
 server/nightwatch/contextEngine.ts    Deterministic assessment and explanation logic
-server/nightwatch/store.ts             Local simulator state and scenario generation
+server/nightwatch/store.ts              Simulator generation and SQLite-backed snapshot orchestration
+server/nightwatch/sqliteSchema.ts       Minimal SQLite DDL and indexes
+server/nightwatch/sqliteRepository.ts   SQLite persistence boundary
 server/nightwatch/router.ts            Backend procedures consumed by the dashboard
 server/nightwatch/contextEngine.test.ts Context-engine regression tests
+server/nightwatch/sqliteRepository.test.ts SQLite persistence regression tests
 ```
 
 ## Design notes
