@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   assessRecentActivity,
@@ -9,13 +10,20 @@ import {
   getRecentEvents,
   serializeToolResult,
 } from "./mcpTools";
+import {
+  assessmentOutputSchema,
+  explanationOutputSchema,
+  homeContextOutputSchema,
+  recentEventsOutputSchema,
+} from "./mcpSchemas";
 
 export const NIGHTWATCH_MCP_PATH = "/mcp";
+export const NIGHTWATCH_MCP_PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION;
 
 export function createNightWatchMcpServer() {
   const server = new McpServer({
     name: "nightwatch",
-    version: "0.3.0",
+    version: "0.4.0",
   });
 
   server.registerTool(
@@ -24,8 +32,9 @@ export function createNightWatchMcpServer() {
       title: "Get recent Ring events",
       description: "Retrieve normalized recent Ring motion events from the NightWatch SQLite event store.",
       inputSchema: { limit: z.number().int().min(1).max(50).optional().default(10) },
+      outputSchema: recentEventsOutputSchema.shape,
     },
-    async ({ limit }) => serializeToolResult(getRecentEvents(limit)),
+    async ({ limit }) => serializeToolResult(getRecentEvents(limit), recentEventsOutputSchema),
   );
 
   server.registerTool(
@@ -33,8 +42,9 @@ export function createNightWatchMcpServer() {
     {
       title: "Get home context",
       description: "Retrieve the current household state, baseline, recent activity summary, and integration status.",
+      outputSchema: homeContextOutputSchema.shape,
     },
-    async () => serializeToolResult(getHomeContext()),
+    async () => serializeToolResult(getHomeContext(), homeContextOutputSchema),
   );
 
   server.registerTool(
@@ -42,8 +52,9 @@ export function createNightWatchMcpServer() {
     {
       title: "Assess recent activity",
       description: "Run the existing deterministic NightWatch context assessment and escalation decision over persisted recent events.",
+      outputSchema: assessmentOutputSchema.shape,
     },
-    async () => serializeToolResult(assessRecentActivity()),
+    async () => serializeToolResult(assessRecentActivity(), assessmentOutputSchema),
   );
 
   server.registerTool(
@@ -52,8 +63,9 @@ export function createNightWatchMcpServer() {
       title: "Get alert explanation",
       description: "Return an explanation and evidence grounded in the persisted events behind the current escalation decision.",
       inputSchema: { question: z.string().min(1).max(240).optional().default("Why did you wake me?") },
+      outputSchema: explanationOutputSchema.shape,
     },
-    async ({ question }) => serializeToolResult(getAlertExplanation(question)),
+    async ({ question }) => serializeToolResult(getAlertExplanation(question), explanationOutputSchema),
   );
 
   return server;

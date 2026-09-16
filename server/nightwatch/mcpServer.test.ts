@@ -12,10 +12,9 @@ async function createConnectedClient() {
   return { client, server };
 }
 
-function readJson(result: { content: Array<{ type: string; text?: string }> }) {
-  const text = result.content.find(item => item.type === "text")?.text;
-  if (!text) throw new Error("MCP tool did not return a text payload");
-  return JSON.parse(text) as Record<string, any>;
+function readJson(result: { structuredContent?: unknown }) {
+  if (!result.structuredContent) throw new Error("MCP tool did not return structuredContent");
+  return result.structuredContent as Record<string, any>;
 }
 
 describe("NightWatch MCP server", () => {
@@ -30,6 +29,7 @@ describe("NightWatch MCP server", () => {
       "assess_activity",
       "get_alert_explanation",
     ]);
+    expect(tools.tools.every(tool => tool.outputSchema)).toBe(true);
 
     await client.close();
     await server.close();

@@ -25,7 +25,7 @@ The dashboard communicates with the backend router. It does not call the context
 | Ring | Simulator only; no live Ring credentials or undocumented API assumptions |
 | Alexa+ | Simulated bedroom device and alert button only |
 | AWS | Not connected |
-| MCP | Local experimental Streamable HTTP boundary at `POST /mcp`; no Alexa+ or version-specific MCP compliance claim |
+| MCP | Streamable HTTP boundary targeting MCP `2025-11-25`; local experimental deployment |
 | Persistence | Local SQLite store at `data/nightwatch.sqlite` |
 | Transport | WebDev's type-safe tRPC procedure boundary; the domain layer is isolated so REST/FastAPI or another transport can be added without moving UI logic |
 
@@ -36,6 +36,19 @@ The WebDev full-stack scaffold uses a Node/TypeScript server, so the dashboard u
 The official `@modelcontextprotocol/sdk` provides the transport and protocol handling. NightWatch mounts a stateless `POST /mcp` Streamable HTTP endpoint and exposes four read-oriented tools: `get_recent_events`, `get_home_context`, `assess_activity`, and `get_alert_explanation`. The tool handlers call the existing `store.ts` functions, which reload SQLite state and invoke the deterministic context engine. The MCP layer does not contain scoring, escalation, persistence, or explanation business logic.
 
 This is an **experimental local MCP boundary**, tested in-process and with an HTTP initialization smoke test. It is not presented as Alexa+ compatible, as a physical Alexa integration, or as compliance with a particular MCP specification version. A future integration milestone must verify the target Amazon requirements, authentication, session behavior, protocol version, and deployment constraints before making those claims.
+
+## Milestone 5: MCP Alexa+ readiness hardening
+
+NightWatch explicitly targets MCP protocol version `2025-11-25`, matching the current Alexa+ MCP QuickStart technical requirement. The official SDK negotiates this version during initialization, and the client smoke test fails if a different version is returned. Each tool declares a small output schema and returns validated `structuredContent` alongside readable text content:
+
+| Tool | Structured output |
+| --- | --- |
+| `get_recent_events` | `events`, `totalAvailable`, and SQLite `source` |
+| `get_home_context` | Household state, scenario, baseline, latest event/alert, and integration status |
+| `assess_activity` | Deterministic assessment, escalation decision, source event IDs, and authority marker |
+| `get_alert_explanation` | Question, answer, evidence, and source event IDs |
+
+The implementation satisfies the **local technical MCP checks** exercised here: initialization, protocol negotiation, `tools/list`, `tools/call`, Streamable HTTP, and structured-output validation. It does **not** satisfy Alexa+ onboarding yet. Amazon's current requirements additionally include a remotely reachable HTTPS endpoint, OAuth 2.1 authorization-code flow with PKCE/S256, protected-resource metadata, authorization-server metadata, developer-account/CLI onboarding, and add-on package metadata and certification. Those steps require Alexa+ developer access and are intentionally not implemented in this milestone. No Alexa+ compatibility claim is made.
 
 ## Milestone 4: MCP client verification
 
@@ -74,7 +87,7 @@ pnpm check
 pnpm build
 ```
 
-The context-engine tests cover an empty window, normal isolated activity, repeated quiet-hours activity while sleeping, and the fact that time alone does not cause an escalation.
+The context-engine tests cover an empty window, normal isolated activity, repeated quiet-hours activity while sleeping, and the fact that time alone does not cause an escalation. MCP tests additionally cover initialization, protocol negotiation, tool discovery, all four calls, output schemas, and real HTTP transport.
 
 ## Project structure
 

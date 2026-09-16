@@ -1,5 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { NIGHTWATCH_MCP_PROTOCOL_VERSION } from "./mcpServer";
+import {
+  assessmentOutputSchema,
+  explanationOutputSchema,
+  homeContextOutputSchema,
+  recentEventsOutputSchema,
+} from "./mcpSchemas";
 
 export const EXPECTED_NIGHTWATCH_TOOLS = [
   "get_recent_events",
@@ -10,6 +17,7 @@ export const EXPECTED_NIGHTWATCH_TOOLS = [
 
 export interface McpClientSmokeResult {
   endpoint: string;
+  protocolVersion: string;
   discoveredTools: string[];
   results: {
     recentEvents: Record<string, unknown>;
@@ -19,10 +27,14 @@ export interface McpClientSmokeResult {
   };
 }
 
-function readJson(result: { content: Array<{ type: string; text?: string }> }) {
-  const text = result.content.find(item => item.type === "text")?.text;
-  if (!text) throw new Error("MCP tool did not return a text payload");
-  return JSON.parse(text) as Record<string, unknown>;
+type ToolResult = {
+  content: Array<{ type: string; text?: string }>;
+  structuredContent?: unknown;
+};
+
+function readStructured(result: ToolResult, schema: { parse(value: unknown): unknown }) {
+  if (result.structuredContent === undefined) throw new Error("MCP tool did not return structuredContent");
+  return schema.parse(result.structuredContent) as Record<string, unknown>;
 }
 
 export async function verifyNightWatchMcpEndpoint(endpoint: string): Promise<McpClientSmokeResult> {
@@ -31,31 +43,36 @@ export async function verifyNightWatchMcpEndpoint(endpoint: string): Promise<Mcp
 
   try {
     await client.connect(transport);
+    if (transport.protocolVersion !== NIGHTWATCH_MCP_PROTOCOL_VERSION) {
+      throw new Error(`Unexpected negotiated MCP protocol: ${transport.protocolVersion}`);
+    }
+
     const tools = await client.listTools();
     const discoveredTools = tools.tools.map(tool => tool.name);
     if (JSON.stringify(discoveredTools) !== JSON.stringify(EXPECTED_NIGHTWATCH_TOOLS)) {
       throw new Error(`Unexpected NightWatch MCP tools: ${discoveredTools.join(", ")}`);
     }
 
-    const recentEvents = readJson(await client.callTool({
+    const recentEvents = readStructured(await client.callTool({
       name: "get_recent_events",
       arguments: { limit: 10 },
-    }) as { content: Array<{ type: string; text?: string }> });
-    const homeContext = readJson(await client.callTool({
+    }) as ToolResult, recentEventsOutputSchema);
+    const homeContext = readStructured(await client.callTool({
       name: "get_home_context",
       arguments: {},
-    }) as { content: Array<{ type: string; text?: string }> });
-    const assessment = readJson(await client.callTool({
+    }) as ToolResult, homeContextOutputSchema);
+    const assessment = readStructured(await client.callTool({
       name: "assess_activity",
       arguments: {},
-    }) as { content: Array<{ type: string; text?: string }> });
-    const explanation = readJson(await client.callTool({
+    }) as ToolResult, assessmentOutputSchema);
+    const explanation = readStructured(await client.callTool({
       name: "get_alert_explanation",
       arguments: { question: "Why did you wake me?" },
-    }) as { content: Array<{ type: string; text?: string }> });
+    }) as ToolResult, explanationOutputSchema);
 
     return {
       endpoint,
+      protocolVersion: transport.protocolVersion,
       discoveredTools,
       results: { recentEvents, homeContext, assessment, explanation },
     };
