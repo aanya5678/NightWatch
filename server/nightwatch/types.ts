@@ -61,7 +61,7 @@ export interface ArchitectureStatus {
   ring: "Simulator";
   alexa: "Simulation only";
   aws: "Not connected";
-  mcp: "Planned locally";
+  mcp: "Local boundary (experimental)";
 }
 
 export interface NightWatchSnapshot {

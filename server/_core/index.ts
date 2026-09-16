@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { handleNightWatchMcpRequest, NIGHTWATCH_MCP_PATH } from "../nightwatch/mcpServer";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -44,6 +45,13 @@ async function startServer() {
       createContext,
     })
   );
+  app.post(NIGHTWATCH_MCP_PATH, handleNightWatchMcpRequest);
+  app.get(NIGHTWATCH_MCP_PATH, (_req, res) => {
+    res.status(405).json({ error: "MCP GET is not enabled for the stateless prototype endpoint." });
+  });
+  app.delete(NIGHTWATCH_MCP_PATH, (_req, res) => {
+    res.status(405).json({ error: "MCP sessions are not enabled for the stateless prototype endpoint." });
+  });
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
