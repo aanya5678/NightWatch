@@ -21,6 +21,17 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
+type AlexaInteraction = {
+  id: string;
+  state: "idle" | "alert_ready" | "speaking" | "listening" | "answered";
+  question: string | null;
+  response: string;
+  toolInvocations: Array<{ name: string; arguments: Record<string, unknown>; returnedEvidence: string[] }>;
+  evidence: string[];
+  sourceEventIds: string[];
+  createdAt: string;
+};
+
 const scenarioButtons = [
   { id: "normal" as const, label: "Normal activity", detail: "Daytime · isolated motion", icon: Sun },
   { id: "unusual" as const, label: "3 AM activity", detail: "Sleeping · repeated motion", icon: Moon },
@@ -50,12 +61,32 @@ function classificationTone(classification?: string) {
 export default function Home() {
   const utils = trpc.useUtils();
   const { data: snapshot, isLoading } = trpc.nightwatch.snapshot.useQuery();
+  const { data: alexaSnapshot } = trpc.nightwatch.alexaSimulation.useQuery();
   const [question, setQuestion] = useState("Why did you wake me?");
   const [explanation, setExplanation] = useState<{ question: string; answer: string; evidence: string[]; sourceEventIds: string[] }>();
-  const simulate = trpc.nightwatch.simulate.useMutation({ onSuccess: () => utils.nightwatch.snapshot.invalidate() });
+  const [alexaHistory, setAlexaHistory] = useState<AlexaInteraction[]>([]);
+  const alexaInteract = trpc.nightwatch.alexaInteract.useMutation({
+    onSuccess: result => {
+      if (result.interaction) setAlexaHistory(history => [result.interaction as AlexaInteraction, ...history].slice(0, 5));
+      void utils.nightwatch.alexaSimulation.invalidate();
+    },
+  });
+  const alexaReset = trpc.nightwatch.alexaReset.useMutation({
+    onSuccess: () => {
+      setAlexaHistory([]);
+      void utils.nightwatch.alexaSimulation.invalidate();
+    },
+  });
+  const simulate = trpc.nightwatch.simulate.useMutation({
+    onSuccess: () => {
+      void utils.nightwatch.snapshot.invalidate();
+      alexaInteract.mutate({});
+    },
+  });
   const reset = trpc.nightwatch.reset.useMutation({
     onSuccess: () => {
       setExplanation(undefined);
+      alexaReset.mutate();
       utils.nightwatch.snapshot.invalidate();
     },
   });
@@ -75,6 +106,11 @@ export default function Home() {
     event.preventDefault();
     if (!question.trim()) return;
     askWhy.mutate({ question: question.trim() });
+  }
+
+  function askAlexa(nextQuestion: string) {
+    setQuestion(nextQuestion);
+    alexaInteract.mutate({ question: nextQuestion });
   }
 
   if (isLoading || !snapshot) {
@@ -186,6 +222,32 @@ export default function Home() {
               <div className="section-kicker">WHY DID YOU WAKE ME?</div><h3 className="panel-title">Contextual explanation</h3>
               <form className="mt-5 flex gap-2" onSubmit={submitQuestion}><input className="text-input" value={question} onChange={event => setQuestion(event.target.value)} aria-label="Ask NightWatch a question" /><button className="send-button" disabled={askWhy.isPending}><Send size={16} /></button></form>
               {explanation ? <div className="answer-card mt-4"><div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.13em] text-cyan-300"><Sparkles size={13} /> Grounded in this assessment</div><p className="mt-3 text-sm leading-6 text-slate-300">{explanation.answer}</p><div className="mt-4 space-y-2">{explanation.evidence.map(item => <div className="flex gap-2 text-xs leading-5 text-slate-500" key={item}><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-300" />{item}</div>)}</div></div> : <div className="answer-empty mt-4"><span>Ask a question after an escalation.</span><span className="text-xs text-slate-600">The response will cite the actual event IDs and context factors.</span></div>}
+            </div>
+          </section>
+
+          <section className="panel p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="section-kicker"><span className="kicker-line" /> ALEXA+ INTERACTION SIMULATION</div>
+                <h3 className="panel-title mt-2">Alexa+ interaction simulation — powered by NightWatch MCP</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">A local, auditable conversation layer. It reads current NightWatch MCP results; it does not connect to Alexa, wake an Echo, or make an independent safety decision.</p>
+              </div>
+              <div className="status-chip shrink-0"><span className="status-live" /> {alexaSnapshot?.state ?? "idle"}</div>
+            </div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+              <div>
+                <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.13em] text-cyan-300"><BellRing size={14} /> Alexa simulated voice response</div>
+                  <p className="mt-3 text-sm leading-6 text-slate-200">{alexaSnapshot?.interaction?.response ?? "Run the 3 AM activity scenario to start the Alexa+ conversation."}</p>
+                  {alexaSnapshot?.interaction && <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500"><span>{alexaSnapshot.interaction.sourceEventIds.length} source events</span><span>·</span><span>{alexaSnapshot.interaction.toolInvocations.length} MCP calls</span></div>}
+                </div>
+                <form className="mt-3 flex gap-2" onSubmit={event => { event.preventDefault(); askAlexa(question); }}><input className="text-input" value={question} onChange={event => setQuestion(event.target.value)} aria-label="Ask simulated Alexa a question" /><button className="send-button" disabled={alexaInteract.isPending}><Send size={16} /></button></form>
+                <div className="mt-3 flex flex-wrap gap-2">{["Why did you wake me?", "What happened?", "How many events were detected?", "Where did they happen?", "Was this unusual compared with the baseline?"].map(prompt => <button key={prompt} className="mini-tag transition-colors hover:border-cyan-300/40 hover:text-cyan-200" onClick={() => askAlexa(prompt)}>{prompt}</button>)}</div>
+              </div>
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                <div className="flex items-center justify-between"><div className="section-kicker">MCP ACTIVITY</div><span className="text-[10px] uppercase tracking-[0.12em] text-slate-600">latest first</span></div>
+                {!alexaSnapshot?.interaction ? <div className="answer-empty mt-4"><span>No interaction yet.</span><span className="text-xs text-slate-600">Each response will show the NightWatch tools it used.</span></div> : <div className="mt-4 space-y-3"><div className="border-l border-cyan-300/30 pl-3"><div className="text-xs text-slate-300">{alexaSnapshot.interaction.question ?? "Alert briefing"}</div><div className="mt-1 text-[11px] leading-5 text-slate-600">{alexaSnapshot.interaction.toolInvocations.map(call => call.name).join(" → ")}</div></div></div>}
+              </div>
             </div>
           </section>
 

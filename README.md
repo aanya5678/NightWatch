@@ -9,7 +9,7 @@ This first milestone is intentionally credential-free and simulator-only:
 ```text
 Ring simulator
   → tRPC backend procedure
-  → normalized in-memory event store
+  → normalized SQLite-backed event store
   → deterministic context engine
   → escalation decision
   → simulated Alexa alert
@@ -49,6 +49,16 @@ NightWatch explicitly targets MCP protocol version `2025-11-25`, matching the cu
 | `get_alert_explanation` | Question, answer, evidence, and source event IDs |
 
 The implementation satisfies the **local technical MCP checks** exercised here: initialization, protocol negotiation, `tools/list`, `tools/call`, Streamable HTTP, and structured-output validation. It does **not** satisfy Alexa+ onboarding yet. Amazon's current requirements additionally include a remotely reachable HTTPS endpoint, OAuth 2.1 authorization-code flow with PKCE/S256, protected-resource metadata, authorization-server metadata, developer-account/CLI onboarding, and add-on package metadata and certification. Those steps require Alexa+ developer access and are intentionally not implemented in this milestone. No Alexa+ compatibility claim is made.
+
+## Milestone 6: simulated Alexa+ interaction experience
+
+NightWatch now includes a local **“Alexa+ interaction simulation — powered by NightWatch MCP”** panel. It is intentionally a simulation rather than a live Alexa+ connection. When a scenario is run, the simulated Alexa layer calls the existing NightWatch MCP tool adapters for home context, assessment, and recent events. It then renders a grounded alert briefing and exposes the tool names, returned evidence, and source event IDs used for that response.
+
+The conversation supports “Why did you wake me?”, “What happened?”, “How many events were detected?”, “Where did they happen?”, and “Was this unusual compared with the baseline?”. Unsupported questions receive a bounded explanation of the supported scope. Responses are generated from the current persisted NightWatch state; the interaction layer does not invent events, locations, timestamps, or escalation reasoning. The deterministic context engine remains the only escalation authority.
+
+The judging path is: run **3 AM activity**, observe the three front-entrance motion events and unusual-activity decision, then read the simulated Alexa briefing and ask **Why did you wake me?**. The follow-up cites the actual household state, event timing, frequency, location, and baseline factors returned by NightWatch.
+
+This milestone does not connect to Alexa or an Echo, does not wake or target a physical device, and does not claim Alexa+ certification, Amazon approval, or live Alexa+ connectivity. A real integration remains dependent on Alexa+ developer access, a remote authenticated HTTPS MCP deployment, add-on onboarding, and Amazon’s review process.
 
 ## Milestone 4: MCP client verification
 
@@ -107,6 +117,8 @@ server/nightwatch/mcpServer.ts           Official SDK server and Streamable HTTP
 server/nightwatch/mcpServer.test.ts      In-process MCP tool protocol tests
 server/nightwatch/mcpClientSmoke.ts     Official SDK client smoke verifier
 server/nightwatch/mcpClientSmoke.test.ts Real HTTP client-to-server verification
+server/nightwatch/alexaSimulation.ts     MCP-backed simulated Alexa conversation layer
+server/nightwatch/alexaSimulation.test.ts Simulated Alexa interaction and state tests
 ```
 
 ## Design notes

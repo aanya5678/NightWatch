@@ -7,6 +7,7 @@ import {
   simulateScenario,
   triggerAlexaAlert,
 } from "./store";
+import { getAlexaSimulation, interactWithAlexa, resetAlexaSimulation } from "./alexaSimulation";
 import { publicProcedure, router } from "../_core/trpc";
 
 export const nightwatchRouter = router({
@@ -19,6 +20,11 @@ export const nightwatchRouter = router({
     .input(z.object({ householdState: z.enum(["sleeping", "active"]) }))
     .mutation(({ input }) => setHouseholdState(input.householdState)),
   triggerAlexaAlert: publicProcedure.mutation(() => triggerAlexaAlert()),
+  alexaSimulation: publicProcedure.query(() => getAlexaSimulation()),
+  alexaInteract: publicProcedure
+    .input(z.object({ question: z.string().max(240).optional() }))
+    .mutation(({ input }) => interactWithAlexa(input.question)),
+  alexaReset: publicProcedure.mutation(() => resetAlexaSimulation()),
   askWhy: publicProcedure
     .input(z.object({ question: z.string().min(1).max(240) }))
     .mutation(({ input }) => askWhy(input.question)),
