@@ -1,0 +1,47 @@
+[
+  {
+    "id": "mock-ring-active-001",
+    "timestamp": "2026-09-17T14:12:00.000Z",
+    "deviceId": "ring-side-01",
+    "deviceName": "Ring Side Gate",
+    "location": "side gate",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "side-yard",
+      "sensitivity": "standard",
+      "personDetected": false,
+      "sequence": 1
+    },
+    "householdState": "active"
+  },
+  {
+    "id": "mock-ring-active-002",
+    "timestamp": "2026-09-17T14:14:30.000Z",
+    "deviceId": "ring-side-01",
+    "deviceName": "Ring Side Gate",
+    "location": "side gate",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "side-yard",
+      "sensitivity": "standard",
+      "personDetected": false,
+      "sequence": 2
+    },
+    "householdState": "active"
+  },
+  {
+    "id": "mock-ring-active-003",
+    "timestamp": "2026-09-17T14:17:00.000Z",
+    "deviceId": "ring-side-01",
+    "deviceName": "Ring Side Gate",
+    "location": "side gate",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "side-yard",
+      "sensitivity": "standard",
+      "personDetected": false,
+      "sequence": 3
+    },
+    "householdState": "active"
+  }
+]

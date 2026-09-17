@@ -70,16 +70,27 @@ With the development server running, the same check can be run manually:
 pnpm mcp:smoke http://127.0.0.1:3000/mcp
 ```
 
-## Run locally
+## Getting started
 
-Requirements: Node.js 22+ and pnpm.
+Requirements: **Node.js 22.5+** and **pnpm**. The repository uses Node's built-in `node:sqlite` API, so no native SQLite package or separate database service is required.
+
+Clone and install the project:
 
 ```bash
+git clone https://github.com/aanya5678/NightWatch.git
+cd NightWatch
 pnpm install
+```
+
+There is no separate database-initialization command. The first backend request creates `data/nightwatch.sqlite` and its schema automatically. That runtime database is local-only and is ignored by Git.
+
+Start the development server:
+
+```bash
 pnpm dev
 ```
 
-Open the preview URL printed by the development server. The main judging path is:
+Open `http://127.0.0.1:3000/` when running locally, or open the preview URL printed by the development server. The main judging path is:
 
 1. Click **3 AM activity**.
 2. Review the timeline, context factors, score, and escalation decision.
@@ -88,6 +99,117 @@ Open the preview URL printed by the development server. The main judging path is
 5. Read the answer and evidence grounded in the current events.
 
 The other controls demonstrate an isolated daytime event and repeated activity while the household is active. **Reset simulation** returns to the empty baseline.
+
+To test the MCP endpoint as a real MCP client, keep the development server running in one terminal and run this command in a second terminal:
+
+```bash
+pnpm mcp:smoke http://127.0.0.1:3000/mcp
+```
+
+The smoke client performs MCP initialization, verifies protocol `2025-11-25`, discovers all four tools, calls each tool, and validates every structured response. This is the recommended local `/mcp` check; it avoids relying on a hand-written JSON-RPC request.
+
+## Mock Ring event payloads
+
+The repository includes schema-valid example payloads under [`examples/mock-events/`](examples/mock-events/). Each file contains an array of the exact `RingEvent` objects used by NightWatch: `id`, ISO `timestamp`, `deviceId`, `deviceName`, `location`, literal `eventType: "motion"`, scalar `metadata`, and `householdState` (`"sleeping"` or `"active"`). They are examples for inspection and fixtures; the current simulator still generates its own normalized events through the dashboard.
+
+| File | Scenario | Expected deterministic range |
+| --- | --- | --- |
+| [`mock_isolated_daytime.json`](examples/mock-events/mock_isolated_daytime.json) | One front-entrance motion event while the household is active during daytime | **0–39: `normal`** |
+| [`mock_baseline_active.json`](examples/mock-events/mock_baseline_active.json) | Three repeated side-gate events while the household is active | **40–69: `unusual`** |
+| [`mock_ring_event_3am.json`](examples/mock-events/mock_ring_event_3am.json) | Three repeated front-entrance events during quiet hours while the household is sleeping | **70–100: `high_priority`** |
+
+The example files are validated in `server/nightwatch/mockEvents.test.ts` through the exported `ringEventSchema` and the real `assessActivity()` function. This ensures the examples exercise the actual thresholds rather than a parallel format or hand-calculated policy. To demonstrate the same scenarios in the application, run `pnpm dev`, open the dashboard, and select **Isolated daytime**, **Repeated activity**, or **3 AM activity**. The dashboard displays the resulting score and classification.
+
+## MCP tool reference
+
+NightWatch exposes these tools at the local Streamable HTTP endpoint `/mcp`. The tools are registered in `server/nightwatch/mcpServer.ts`; their structured outputs are defined in `server/nightwatch/mcpSchemas.ts`. Every tool calls an existing domain adapter in `server/nightwatch/mcpTools.ts`, so MCP does not duplicate persistence, scoring, escalation, or explanation logic.
+
+The shared schema names below mean the following exact objects: `RingEvent` has `id`, `timestamp`, `deviceId`, `deviceName`, `location`, `eventType: "motion"`, scalar `metadata`, and `householdState`; `ContextFactor` has `key`, `label`, numeric `points`, `impact: "elevating" | "neutral"`, and `detail`; and `AlertRecord` has `id`, `createdAt`, `status: "pending" | "delivered"`, `message`, `reason`, and `relatedEventIds: string[]`.
+
+### `get_recent_events`
+
+**Purpose:** Return normalized recent Ring motion events from the SQLite event store.
+
+**Input:** An optional object `{ "limit": number }`. `limit` is an integer from 1 through 50 and defaults to 10.
+
+**Output:** `{ "events": RingEvent[], "totalAvailable": number, "source": "NightWatch SQLite event store" }`.
+
+Example tool request:
+
+```json
+{ "name": "get_recent_events", "arguments": { "limit": 3 } }
+```
+
+Example structured response shape:
+
+```json
+{
+  "events": [{ "id": "ring-…", "timestamp": "2026-09-17T03:04:00.000Z", "deviceId": "ring-front-01", "deviceName": "Ring Front Entrance", "location": "front entrance", "eventType": "motion", "metadata": { "zone": "porch", "sequence": 1 }, "householdState": "sleeping" }],
+  "totalAvailable": 3,
+  "source": "NightWatch SQLite event store"
+}
+```
+
+The adapter calls `getSnapshot()` and returns the persisted event window; it does not create or assess events.
+
+### `get_home_context`
+
+**Purpose:** Return the current household state, scenario marker, baseline, recent-event count, latest event, latest alert, and integration status.
+
+**Input:** No fields; use `{}`.
+
+**Output:** `{ "householdState": "sleeping" | "active", "lastScenario": "ready" | "normal" | "unusual" | "repeated", "baseline": { "typicalEventsPerHour": number, "typicalLocations": string[], "quietHours": { "start": number, "end": number }, "description": string }, "recentEventCount": number, "latestEvent": RingEvent | null, "latestAlert": AlertRecord | null, "integrationStatus": { "ring": "Simulator", "alexa": "Simulation only", "aws": "Not connected", "mcp": "Local boundary (experimental)" } }`.
+
+Example tool request:
+
+```json
+{ "name": "get_home_context", "arguments": {} }
+```
+
+The adapter reads `getSnapshot()` and returns current persisted context. It does not make an escalation decision.
+
+### `assess_activity`
+
+**Purpose:** Run the existing deterministic context assessment and escalation decision over persisted recent events.
+
+**Input:** No fields; use `{}`.
+
+**Output:** `{ "assessment": { "classification": "normal" | "unusual" | "high_priority", "score": number, "factors": ContextFactor[], "summary": string, "comparedWithBaseline": string, "eventCount": number, "intervalSeconds": number | null, "location": string }, "decision": { "escalated": boolean, "priority": "none" | "unusual" | "high_priority", "reason": string, "alertMessage": string | null, "createdAt": string }, "eventIds": string[], "deterministicAuthority": "NightWatch contextEngine.createEscalationDecision" }`.
+
+Example tool request:
+
+```json
+{ "name": "assess_activity", "arguments": {} }
+```
+
+The adapter calls `getSnapshot()`, which invokes `assessActivity()` and `createEscalationDecision()` from `contextEngine.ts`. The context engine remains the authority for the score and escalation thresholds: below 40 is `normal`, 40–69 is `unusual`, and 70 or higher is `high_priority`.
+
+### `get_alert_explanation`
+
+**Purpose:** Return a grounded explanation and evidence for the current escalation decision.
+
+**Input:** An optional object `{ "question": string }`. `question` must contain 1–240 characters and defaults to `"Why did you wake me?"`.
+
+**Output:** `{ "question": string, "answer": string, "evidence": string[], "sourceEventIds": string[] }`.
+
+Example tool request:
+
+```json
+{ "name": "get_alert_explanation", "arguments": { "question": "Why did you wake me?" } }
+```
+
+Example structured response shape:
+
+```json
+{
+  "question": "Why did you wake me?",
+  "answer": "I woke you because NightWatch observed 3 motion events near the front entrance during a context window where the household was sleeping…",
+  "evidence": ["Activity occurred during the household quiet-hours window (23:00–06:00).", "3 motion events were observed in this assessment window."],
+  "sourceEventIds": ["ring-…"]
+}
+```
+
+The adapter calls `askWhy()`, which runs the deterministic assessment and `explainDecision()` over the current persisted events. It does not invent evidence or infer a crime or emergency.
 
 ## Test and build
 
@@ -119,6 +241,8 @@ server/nightwatch/mcpClientSmoke.ts     Official SDK client smoke verifier
 server/nightwatch/mcpClientSmoke.test.ts Real HTTP client-to-server verification
 server/nightwatch/alexaSimulation.ts     MCP-backed simulated Alexa conversation layer
 server/nightwatch/alexaSimulation.test.ts Simulated Alexa interaction and state tests
+server/nightwatch/mockEvents.test.ts     Schema and deterministic-range checks for examples
+examples/mock-events/                     Representative RingEvent JSON fixtures
 ```
 
 ## Design notes

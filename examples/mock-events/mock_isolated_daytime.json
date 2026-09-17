@@ -1,0 +1,17 @@
+[
+  {
+    "id": "mock-ring-day-001",
+    "timestamp": "2026-09-17T14:12:00.000Z",
+    "deviceId": "ring-front-01",
+    "deviceName": "Ring Front Entrance",
+    "location": "front entrance",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "porch",
+      "sensitivity": "standard",
+      "personDetected": false,
+      "sequence": 1
+    },
+    "householdState": "active"
+  }
+]

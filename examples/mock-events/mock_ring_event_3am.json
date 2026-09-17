@@ -1,0 +1,47 @@
+[
+  {
+    "id": "mock-ring-3am-001",
+    "timestamp": "2026-09-17T03:04:00.000Z",
+    "deviceId": "ring-front-01",
+    "deviceName": "Ring Front Entrance",
+    "location": "front entrance",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "porch",
+      "sensitivity": "high",
+      "personDetected": false,
+      "sequence": 1
+    },
+    "householdState": "sleeping"
+  },
+  {
+    "id": "mock-ring-3am-002",
+    "timestamp": "2026-09-17T03:05:34.000Z",
+    "deviceId": "ring-front-01",
+    "deviceName": "Ring Front Entrance",
+    "location": "front entrance",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "porch",
+      "sensitivity": "high",
+      "personDetected": false,
+      "sequence": 2
+    },
+    "householdState": "sleeping"
+  },
+  {
+    "id": "mock-ring-3am-003",
+    "timestamp": "2026-09-17T03:06:56.000Z",
+    "deviceId": "ring-front-01",
+    "deviceName": "Ring Front Entrance",
+    "location": "front entrance",
+    "eventType": "motion",
+    "metadata": {
+      "zone": "porch",
+      "sensitivity": "high",
+      "personDetected": false,
+      "sequence": 3
+    },
+    "householdState": "sleeping"
+  }
+]
