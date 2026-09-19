@@ -7,4 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  nightwatchAiEnabled: process.env.NIGHTWATCH_AI_ENABLED === "true",
+  awsRegion: process.env.AWS_REGION ?? "",
+  nightwatchBedrockModelId: process.env.NIGHTWATCH_BEDROCK_MODEL_ID ?? "",
+  nightwatchAiTimeoutMs: Number(process.env.NIGHTWATCH_AI_TIMEOUT_MS ?? "5000"),
 };

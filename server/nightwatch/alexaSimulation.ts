@@ -5,7 +5,8 @@ import {
   getHomeContext,
   getRecentEvents,
 } from "./mcpTools";
-import type { RingEvent } from "./types";
+import { narrateWithBedrock, NarrationProvider } from "./bedrockNarrator";
+import type { ExplanationResponse, RingEvent } from "./types";
 
 export type AlexaSimulationState = "idle" | "alert_ready" | "speaking" | "listening" | "answered";
 
@@ -20,6 +21,8 @@ export interface AlexaInteraction {
   state: AlexaSimulationState;
   question: string | null;
   response: string;
+  narrationProvider: NarrationProvider;
+  narrationModelId: string | null;
   toolInvocations: AlexaToolInvocation[];
   evidence: string[];
   sourceEventIds: string[];
@@ -55,19 +58,48 @@ function tool(name: AlexaToolInvocation["name"], args: Record<string, unknown>, 
   return { name, arguments: args, returnedEvidence };
 }
 
-function buildAlertInteraction(): AlexaInteraction {
+async function narrate(
+  question: string,
+  context: ReturnType<typeof getHomeContext>,
+  assessment: ReturnType<typeof assessRecentActivity>,
+  events: RingEvent[],
+  response: string,
+  evidence: string[],
+): Promise<{ response: string; provider: NarrationProvider; modelId: string | null }> {
+  const explanation: ExplanationResponse = {
+    question,
+    answer: response,
+    evidence,
+    sourceEventIds: eventIds(events),
+  };
+  const result = await narrateWithBedrock({
+    question,
+    householdState: context.householdState,
+    baseline: context.baseline,
+    events,
+    assessment: assessment.assessment,
+    decision: assessment.decision,
+    explanation,
+  });
+  return { response: result.text, provider: result.provider, modelId: result.modelId };
+}
+
+async function buildAlertInteraction(): Promise<AlexaInteraction> {
   const context = getHomeContext();
   const assessment = assessRecentActivity();
   const recent = getRecentEvents(50);
   const events = recent.events;
-  const response = assessment.decision.alertMessage ?? "No unusual activity alert is queued. The current activity is consistent with the household context.";
+  const deterministicResponse = assessment.decision.alertMessage ?? "No unusual activity alert is queued. The current activity is consistent with the household context.";
   const evidence = assessment.assessment.factors.filter(factor => factor.points > 0).map(factor => factor.detail);
+  const narration = await narrate("Alert briefing", context, assessment, events, deterministicResponse, evidence);
 
   return {
     id: `alexa-${randomUUID().slice(0, 8)}`,
     state: assessment.decision.escalated ? "speaking" : "answered",
     question: null,
-    response,
+    response: narration.response,
+    narrationProvider: narration.provider,
+    narrationModelId: narration.modelId,
     toolInvocations: [
       tool("get_home_context", {}, [`Household state: ${context.householdState}`, `Scenario: ${context.lastScenario}`]),
       tool("assess_activity", {}, [assessment.assessment.summary, `Decision escalated: ${assessment.decision.escalated}`]),
@@ -79,7 +111,7 @@ function buildAlertInteraction(): AlexaInteraction {
   };
 }
 
-function buildQuestionInteraction(question: string): AlexaInteraction {
+async function buildQuestionInteraction(question: string): Promise<AlexaInteraction> {
   const normalized = question.toLowerCase().trim();
   const context = getHomeContext();
   const assessment = assessRecentActivity();
@@ -91,30 +123,30 @@ function buildQuestionInteraction(question: string): AlexaInteraction {
     tool("get_home_context", {}, [`Household state: ${context.householdState}`, `Baseline: ${context.baseline.description}`]),
     tool("assess_activity", {}, [assessment.assessment.comparedWithBaseline, `Classification: ${assessment.assessment.classification}`]),
   ];
-  let response: string;
+  let deterministicResponse: string;
   let evidence: string[];
 
   if (/why|wake/.test(normalized)) {
     const explanation = getAlertExplanation(question);
     invocations.push(tool("get_alert_explanation", { question }, explanation.evidence));
-    response = explanation.answer;
+    deterministicResponse = explanation.answer;
     evidence = explanation.evidence;
   } else if (/how many|number of|count/.test(normalized)) {
     invocations.push(tool("get_recent_events", { limit: 50 }, [`${recent.totalAvailable} events returned`]),);
-    response = `NightWatch detected ${recent.totalAvailable} motion event${recent.totalAvailable === 1 ? "" : "s"} in ${eventWindow(events)}.`;
+    deterministicResponse = `NightWatch detected ${recent.totalAvailable} motion event${recent.totalAvailable === 1 ? "" : "s"} in ${eventWindow(events)}.`;
     evidence = [`Event count: ${recent.totalAvailable}`, `Source: ${recent.source}`];
   } else if (/where|location|happen/.test(normalized)) {
     invocations.push(tool("get_recent_events", { limit: 50 }, [`Locations: ${locations.join(", ") || "none"}`]));
-    response = locations.length > 0
+    deterministicResponse = locations.length > 0
       ? `The motion events happened near ${locations.join(" and ")}.`
       : "There are no motion-event locations in the current assessment window.";
     evidence = locations.length > 0 ? [`Locations: ${locations.join(", ")}`, `Event count: ${events.length}`] : ["No persisted events were returned."];
   } else if (/unusual|baseline|normal|different/.test(normalized)) {
-    response = `${assessment.assessment.comparedWithBaseline} NightWatch classified the current activity as ${assessment.assessment.classification.replace("_", " ")} with a deterministic score of ${assessment.assessment.score}/100.`;
+    deterministicResponse = `${assessment.assessment.comparedWithBaseline} NightWatch classified the current activity as ${assessment.assessment.classification.replace("_", " ")} with a deterministic score of ${assessment.assessment.score}/100.`;
     evidence = assessment.assessment.factors.map(factor => factor.detail);
   } else if (/what happened|latest|activity|events?/.test(normalized)) {
     invocations.push(tool("get_recent_events", { limit: 50 }, [`${recent.totalAvailable} events returned`, `Locations: ${locations.join(", ") || "none"}`]));
-    response = events.length > 0
+    deterministicResponse = events.length > 0
       ? `NightWatch recorded ${events.length} motion event${events.length === 1 ? "" : "s"} near ${locations.join(" and ")} during ${eventWindow(events)}. The household was ${context.householdState}.`
       : "NightWatch has no persisted motion events in the current assessment window.";
     evidence = [
@@ -124,15 +156,18 @@ function buildQuestionInteraction(question: string): AlexaInteraction {
     ];
   } else {
     invocations.push(tool("get_recent_events", { limit: 50 }, [`${recent.totalAvailable} events returned`]));
-    response = "I can answer what happened, how many events were detected, where they happened, whether the pattern was unusual, or why an alert was raised. I will use the current NightWatch data for those answers.";
+    deterministicResponse = "I can answer what happened, how many events were detected, where they happened, whether the pattern was unusual, or why an alert was raised. I will use the current NightWatch data for those answers.";
     evidence = [`Current event count: ${recent.totalAvailable}`, `Current classification: ${assessment.assessment.classification}`];
   }
 
+  const narration = await narrate(question, context, assessment, events, deterministicResponse, evidence);
   return {
     id: `alexa-${randomUUID().slice(0, 8)}`,
     state: "answered",
     question,
-    response,
+    response: narration.response,
+    narrationProvider: narration.provider,
+    narrationModelId: narration.modelId,
     toolInvocations: invocations,
     evidence,
     sourceEventIds: ids,
@@ -154,9 +189,9 @@ export function resetAlexaSimulation() {
   return getAlexaSimulation();
 }
 
-export function interactWithAlexa(question?: string) {
+export async function interactWithAlexa(question?: string) {
   state = question?.trim() ? "listening" : "alert_ready";
-  const interaction = question?.trim() ? buildQuestionInteraction(question.trim()) : buildAlertInteraction();
+  const interaction = question?.trim() ? await buildQuestionInteraction(question.trim()) : await buildAlertInteraction();
   latestInteraction = interaction;
   state = interaction.state;
   return getAlexaSimulation();

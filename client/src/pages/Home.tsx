@@ -26,6 +26,8 @@ type AlexaInteraction = {
   state: "idle" | "alert_ready" | "speaking" | "listening" | "answered";
   question: string | null;
   response: string;
+  narrationProvider: "bedrock" | "deterministic-fallback";
+  narrationModelId: string | null;
   toolInvocations: Array<{ name: string; arguments: Record<string, unknown>; returnedEvidence: string[] }>;
   evidence: string[];
   sourceEventIds: string[];
@@ -239,7 +241,7 @@ export default function Home() {
                 <div className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] p-4">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.13em] text-cyan-300"><BellRing size={14} /> Alexa simulated voice response</div>
                   <p className="mt-3 text-sm leading-6 text-slate-200">{alexaSnapshot?.interaction?.response ?? "Run the 3 AM activity scenario to start the Alexa+ conversation."}</p>
-                  {alexaSnapshot?.interaction && <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500"><span>{alexaSnapshot.interaction.sourceEventIds.length} source events</span><span>·</span><span>{alexaSnapshot.interaction.toolInvocations.length} MCP calls</span></div>}
+                  {alexaSnapshot?.interaction && <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500"><span>{alexaSnapshot.interaction.sourceEventIds.length} source events</span><span>·</span><span>{alexaSnapshot.interaction.toolInvocations.length} MCP calls</span><span>·</span><span>{alexaSnapshot.interaction.narrationProvider === "bedrock" ? `AWS Bedrock${alexaSnapshot.interaction.narrationModelId ? ` · ${alexaSnapshot.interaction.narrationModelId}` : ""}` : "Deterministic fallback"}</span></div>}
                 </div>
                 <form className="mt-3 flex gap-2" onSubmit={event => { event.preventDefault(); askAlexa(question); }}><input className="text-input" value={question} onChange={event => setQuestion(event.target.value)} aria-label="Ask simulated Alexa a question" /><button className="send-button" disabled={alexaInteract.isPending}><Send size={16} /></button></form>
                 <div className="mt-3 flex flex-wrap gap-2">{["Why did you wake me?", "What happened?", "How many events were detected?", "Where did they happen?", "Was this unusual compared with the baseline?"].map(prompt => <button key={prompt} className="mini-tag transition-colors hover:border-cyan-300/40 hover:text-cyan-200" onClick={() => askAlexa(prompt)}>{prompt}</button>)}</div>

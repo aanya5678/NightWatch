@@ -7,14 +7,15 @@ import {
 } from "./alexaSimulation";
 
 describe("simulated Alexa+ interaction", () => {
-  it("triggers an alert response from unusual NightWatch activity", () => {
+  it("triggers an alert response from unusual NightWatch activity", async () => {
     resetSimulation();
     resetAlexaSimulation();
     const snapshot = simulateScenario("unusual");
-    const result = interactWithAlexa();
+    const result = await interactWithAlexa();
 
     expect(result.state).toBe("speaking");
     expect(result.interaction?.response).toBe(snapshot.decision.alertMessage);
+    expect(result.interaction?.narrationProvider).toBe("deterministic-fallback");
     expect(result.interaction?.sourceEventIds).toEqual(snapshot.events.map(event => event.id));
     expect(result.interaction?.toolInvocations.map(call => call.name)).toEqual([
       "get_home_context",
@@ -23,22 +24,22 @@ describe("simulated Alexa+ interaction", () => {
     ]);
   });
 
-  it("does not escalate normal activity", () => {
+  it("does not escalate normal activity", async () => {
     resetSimulation();
     resetAlexaSimulation();
     const snapshot = simulateScenario("normal");
-    const result = interactWithAlexa();
+    const result = await interactWithAlexa();
 
     expect(snapshot.decision.escalated).toBe(false);
     expect(result.state).toBe("answered");
     expect(result.interaction?.response).toContain("consistent with the household context");
   });
 
-  it("answers why did you wake me with deterministic evidence", () => {
+  it("answers why did you wake me with deterministic evidence", async () => {
     resetSimulation();
     resetAlexaSimulation();
     const snapshot = simulateScenario("unusual");
-    const result = interactWithAlexa("Why did you wake me?");
+    const result = await interactWithAlexa("Why did you wake me?");
 
     expect(result.interaction?.response).toContain("unusual-activity alert");
     expect(result.interaction?.response).toContain("sleeping");
@@ -51,32 +52,32 @@ describe("simulated Alexa+ interaction", () => {
     ["How many events were detected?", "3 motion events"],
     ["Where did they happen?", "front entrance"],
     ["Was this unusual compared with the baseline?", "deterministic score"],
-  ])("answers supported follow-up: %s", (question, expected) => {
+  ])("answers supported follow-up: %s", async (question, expected) => {
     resetSimulation();
     resetAlexaSimulation();
     simulateScenario("unusual");
-    const result = interactWithAlexa(question);
+    const result = await interactWithAlexa(question);
 
     expect(result.state).toBe("answered");
     expect(result.interaction?.response.toLowerCase()).toContain(expected.toLowerCase());
     expect(result.interaction?.toolInvocations.length).toBeGreaterThan(0);
   });
 
-  it("handles an unknown question without inventing an answer", () => {
+  it("handles an unknown question without inventing an answer", async () => {
     resetSimulation();
     resetAlexaSimulation();
     simulateScenario("unusual");
-    const result = interactWithAlexa("Can you order pizza?");
+    const result = await interactWithAlexa("Can you order pizza?");
 
     expect(result.interaction?.response).toContain("I can answer what happened");
     expect(result.interaction?.sourceEventIds).toEqual(getSnapshot().events.map(event => event.id));
   });
 
-  it("resets the simulated Alexa state", () => {
+  it("resets the simulated Alexa state", async () => {
     resetSimulation();
     resetAlexaSimulation();
     simulateScenario("unusual");
-    interactWithAlexa("What happened?");
+    await interactWithAlexa("What happened?");
     expect(getAlexaSimulation().interaction).not.toBeNull();
 
     const result = resetAlexaSimulation();
