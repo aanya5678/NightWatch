@@ -16,6 +16,24 @@ Ring simulator
   → grounded "Why did you wake me?" explanation
 ```
 
+### Current architecture
+
+```mermaid
+flowchart LR
+  S[Scenario simulator / JSON fixtures] --> R[SQLite event store]
+  R --> C[Deterministic context engine]
+  C --> D[Escalation decision and evidence]
+  D --> M[MCP domain adapters]
+  M --> A[Simulated Alexa+ interaction]
+  D --> B{Bedrock enabled?}
+  B -->|yes| N[Optional grounded narration]
+  B -->|no or unavailable| F[Deterministic fallback narration]
+  N --> A
+  F --> A
+```
+
+The context engine remains the authority for scoring and escalation. Bedrock, when enabled, can phrase grounded narration but cannot change the decision. The diagram shows current local behavior; it does not imply live Ring, Alexa/Echo, Alexa+, or Amazon service connectivity beyond the explicitly configured Bedrock path.
+
 The dashboard communicates with the backend router. It does not call the context engine directly. The context engine is deterministic and is the authority for escalation; future AI can interpret context and generate language, but it must not be the sole authority for safety-critical escalation.
 
 ## Current status and deliberate limitations
@@ -24,22 +42,31 @@ The dashboard communicates with the backend router. It does not call the context
 | --- | --- |
 | Ring | Simulator only; no live Ring credentials or undocumented API assumptions |
 | Alexa+ | Simulated bedroom device and alert button only |
-| AWS | Not connected |
+| AWS | Optional Bedrock narration; disabled by default |
 | MCP | Streamable HTTP boundary targeting MCP `2025-11-25`; local experimental deployment |
 | Persistence | Local SQLite store at `data/nightwatch.sqlite` |
 | Transport | WebDev's type-safe tRPC procedure boundary; the domain layer is isolated so REST/FastAPI or another transport can be added without moving UI logic |
 
-The WebDev full-stack scaffold uses a Node/TypeScript server, so the dashboard uses that platform-native server boundary rather than introducing a second always-on Python process. The business logic is kept in small, readable modules under `server/nightwatch/`. Persistence uses Node 22's built-in `node:sqlite` API, with no native npm dependency. The SQLite repository stores the current normalized Ring event window, household state, scenario marker, and alert history. Before Amazon integrations, the next architectural decision is whether to port that isolated domain layer to a Python/FastAPI service or keep the platform server and expose a separate Python MCP service.
+| Capability | Current implementation |
+| --- | --- |
+| Ring events | Simulated normalized events and repository fixtures; no live Ring service connection |
+| Context and escalation | Real deterministic NightWatch domain logic over persisted SQLite state |
+| MCP | Real local Streamable HTTP server and SDK client verification; not an Alexa+ deployment |
+| Bedrock | Real optional server-side Converse API path when explicitly configured; deterministic fallback by default |
+| Alexa/Echo | Simulated interaction panel only; no physical device control |
+
+The WebDev full-stack scaffold uses a Node/TypeScript server and the platform-native server boundary. Business logic is kept in small modules under `server/nightwatch/`. Persistence uses Node 22's built-in `node:sqlite` API, with no native SQLite npm dependency. Optional Bedrock narration runs server-side and receives only the deterministic NightWatch context needed to phrase a response.
 
 ## Milestone 3: MCP boundary
 
 The official `@modelcontextprotocol/sdk` provides the transport and protocol handling. NightWatch mounts a stateless `POST /mcp` Streamable HTTP endpoint and exposes four read-oriented tools: `get_recent_events`, `get_home_context`, `assess_activity`, and `get_alert_explanation`. The tool handlers call the existing `store.ts` functions, which reload SQLite state and invoke the deterministic context engine. The MCP layer does not contain scoring, escalation, persistence, or explanation business logic.
 
-This is an **experimental local MCP boundary**, tested in-process and with an HTTP initialization smoke test. It is not presented as Alexa+ compatible, as a physical Alexa integration, or as compliance with a particular MCP specification version. A future integration milestone must verify the target Amazon requirements, authentication, session behavior, protocol version, and deployment constraints before making those claims.
+This is an **experimental local MCP boundary** targeting MCP `2025-11-25`. It is tested in-process and with an HTTP initialization smoke test, but it is not an Alexa+ deployment, a physical Alexa integration, or a certification/compliance claim.
+
 
 ## Milestone 5: MCP Alexa+ readiness hardening
 
-NightWatch explicitly targets MCP protocol version `2025-11-25`, matching the current Alexa+ MCP QuickStart technical requirement. The official SDK negotiates this version during initialization, and the client smoke test fails if a different version is returned. Each tool declares a small output schema and returns validated `structuredContent` alongside readable text content:
+NightWatch explicitly targets MCP protocol version `2025-11-25`. The official SDK negotiates this version during initialization, and the client smoke test fails if a different version is returned. Each tool declares a small output schema and returns validated `structuredContent` alongside readable text content:
 
 | Tool | Structured output |
 | --- | --- |
@@ -48,7 +75,59 @@ NightWatch explicitly targets MCP protocol version `2025-11-25`, matching the cu
 | `assess_activity` | Deterministic assessment, escalation decision, source event IDs, and authority marker |
 | `get_alert_explanation` | Question, answer, evidence, and source event IDs |
 
-The implementation satisfies the **local technical MCP checks** exercised here: initialization, protocol negotiation, `tools/list`, `tools/call`, Streamable HTTP, and structured-output validation. It does **not** satisfy Alexa+ onboarding yet. Amazon's current requirements additionally include a remotely reachable HTTPS endpoint, OAuth 2.1 authorization-code flow with PKCE/S256, protected-resource metadata, authorization-server metadata, developer-account/CLI onboarding, and add-on package metadata and certification. Those steps require Alexa+ developer access and are intentionally not implemented in this milestone. No Alexa+ compatibility claim is made.
+The implementation satisfies the **local MCP checks** exercised here: initialization, protocol negotiation, `tools/list`, `tools/call`, Streamable HTTP, and structured-output validation. These local checks do not establish Alexa+ onboarding, certification, Amazon approval, or compatibility with a physical Alexa/Echo device. Remote deployment, authentication, onboarding, and any external review remain outside this repository milestone.
+
+## Milestone 6: simulated Alexa+ interaction experience
+
+NightWatch now includes a local **“Alexa+ interaction simulation — powered by NightWatch MCP”** panel. It is intentionally a simulation rather than a live Alexa+ connection. When a scenario is run, the simulated Alexa layer calls the existing NightWatch MCP tool adapters for home context, assessment, and recent events. It then renders a grounded alert briefing and exposes the tool names, returned evidence, and source event IDs used for that response.
+
+The conversation supports “Why did you wake me?”, “What happened?”, “How many events were detected?”, “Where did they happen?”, and “Was this unusual compared with the baseline?”. Unsupported questions receive a bounded explanation of the supported scope. Responses are generated from the current persisted NightWatch state; the interaction layer does not invent events, locations, timestamps, or escalation reasoning. The deterministic context engine remains the only escalation authority.
+
+The judging path is: run **3 AM activity**, observe the three front-entrance motion events and unusual-activity decision, then read the simulated Alexa briefing and ask **Why did you wake me?**. The follow-up cites the actual household state, event timing, frequency, location, and baseline factors returned by NightWatch.
+
+This milestone does not connect to Alexa or an Echo, does not wake or target a physical device, and does not claim Alexa+ certification, Amazon approval, or live Alexa+ connectivity. A real integration remains dependent on Alexa+ developer access, a remote authenticated HTTPS MCP deployment, add-on onboarding, and Amazon’s review process.
+
+## Step 7: optional AWS AI narration
+
+NightWatch now has an optional **Amazon Bedrock Runtime Converse API** narration provider. This is a server-side AI capability for natural-language narration only; it does not replace the deterministic context engine, change a score, classify activity, create an escalation, or control Alexa/Echo hardware. The existing Alexa+ interaction simulation remains fully functional without AWS.
+
+The request flow is:
+
+```text
+SQLite-backed NightWatch state
+  → MCP/domain adapters
+  → deterministic assessment, decision, and evidence
+  → optional Bedrock Converse narration
+  → simulated Alexa+ response
+```
+
+Bedrock receives a compact structured payload containing the current household state, baseline, event IDs/timestamps/locations, assessment, deterministic decision, and explanation evidence. Its output is used only as natural-language narration. The authoritative score, classification, escalation flag, priority, evidence, and source event IDs remain generated by NightWatch and are returned separately. The prompt prohibits invented events, timestamps, locations, sensor readings, household state, reasons, burglary/crime/emergency claims, or person identity claims.
+
+AI is disabled by default. To enable it locally, configure the following **server-side** variables without committing them:
+
+```bash
+NIGHTWATCH_AI_ENABLED=true
+AWS_REGION=us-east-1
+NIGHTWATCH_BEDROCK_MODEL_ID=your-enabled-bedrock-model-id
+NIGHTWATCH_AI_TIMEOUT_MS=5000
+```
+
+The AWS SDK uses its standard credential provider chain. Local development may use an AWS profile or environment-provided temporary credentials; deployed workloads should use an IAM role or equivalent workload identity. Do not put credentials in source code, the client bundle, README examples, or committed `.env` files. The Bedrock identity needs `bedrock:InvokeModel`, and model availability/access depends on the selected AWS Region and account prerequisites. See the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) and [Bedrock model access documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
+
+When `NIGHTWATCH_AI_ENABLED=false`, region/model configuration is incomplete, the request times out, or Bedrock rejects the request, NightWatch returns the existing deterministic Alexa simulation response. No raw AWS error is returned to the client, and no deterministic NightWatch state is mutated by the provider. This milestone does not add Bedrock Agents, Knowledge Bases, OpenSearch, SageMaker, Lambda, live Ring integration, physical Alexa/Echo control, Alexa+ certification, Amazon approval, or production safety capabilities.
+
+## Milestone 5: MCP Alexa+ readiness hardening
+
+NightWatch explicitly targets MCP protocol version `2025-11-25`. The official SDK negotiates this version during initialization, and the client smoke test fails if a different version is returned. Each tool declares a small output schema and returns validated `structuredContent` alongside readable text content:
+
+| Tool | Structured output |
+| --- | --- |
+| `get_recent_events` | `events`, `totalAvailable`, and SQLite `source` |
+| `get_home_context` | Household state, scenario, baseline, latest event/alert, and integration status |
+| `assess_activity` | Deterministic assessment, escalation decision, source event IDs, and authority marker |
+| `get_alert_explanation` | Question, answer, evidence, and source event IDs |
+
+The implementation satisfies the **local MCP checks** exercised here: initialization, protocol negotiation, `tools/list`, `tools/call`, Streamable HTTP, and structured-output validation. These local checks do not establish Alexa+ onboarding, certification, Amazon approval, or compatibility with a physical Alexa/Echo device. Remote deployment, authentication, onboarding, and any external review remain outside this repository milestone.
 
 ## Milestone 6: simulated Alexa+ interaction experience
 
@@ -119,6 +198,16 @@ Start the development server:
 pnpm dev
 ```
 
+### Credential-free demo mode
+
+AWS is optional and disabled by default. The complete simulator, MCP boundary, and simulated Alexa+ interaction work without AWS credentials:
+
+```bash
+NIGHTWATCH_AI_ENABLED=false pnpm dev
+```
+
+When Bedrock is not enabled or is unavailable, NightWatch uses the deterministic narration fallback. Do not add AWS credentials to the repository.
+
 Open `http://127.0.0.1:3000/` when running locally, or open the preview URL printed by the development server. The main judging path is:
 
 1. Click **3 AM activity**.
@@ -139,7 +228,7 @@ The smoke client performs MCP initialization, verifies protocol `2025-11-25`, di
 
 ## Mock Ring event payloads
 
-The repository includes schema-valid example payloads under [`examples/mock-events/`](examples/mock-events/). Each file contains an array of the exact `RingEvent` objects used by NightWatch: `id`, ISO `timestamp`, `deviceId`, `deviceName`, `location`, literal `eventType: "motion"`, scalar `metadata`, and `householdState` (`"sleeping"` or `"active"`). They are examples for inspection and fixtures; the current simulator still generates its own normalized events through the dashboard.
+The repository includes schema-valid example payloads under [`examples/mock-events/`](examples/mock-events/). Each file contains an array of the exact `RingEvent` objects used by NightWatch: `id`, ISO `timestamp`, `deviceId`, `deviceName`, `location`, literal `eventType: "motion"`, scalar `metadata`, and `householdState` (`"sleeping"` or `"active"`). They are examples for inspection and fixtures; the current simulator still generates its own normalized events through the dashboard. Fixture scores and classifications are reproducible, while dashboard event IDs are regenerated for each run.
 
 | File | Scenario | Expected deterministic range |
 | --- | --- | --- |
@@ -239,6 +328,20 @@ Example structured response shape:
 ```
 
 The adapter calls `askWhy()`, which runs the deterministic assessment and `explainDecision()` over the current persisted events. It does not invent evidence or infer a crime or emergency.
+
+### Verification
+
+From the repository root, the submission checks are:
+
+```bash
+pnpm test
+pnpm check
+pnpm build
+pnpm mcp:smoke
+pnpm diff:check
+```
+
+`pnpm mcp:smoke` expects the development server to be running. `pnpm diff:check` is a whitespace/error check and does not alter files.
 
 ## Test and build
 

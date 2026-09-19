@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "mcp:smoke": "tsx server/nightwatch/mcpClientSmoke.ts",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "diff:check": "git diff --check"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1136.0",
